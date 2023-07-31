@@ -1,0 +1,23 @@
+{
+  "name": "com.katuusagi.fixedstring",
+  "displayName": "FixedString",
+  "description": "",
+  "version": "1.0.0",
+  "unity": "2021.3",
+  "dependencies": {
+    "com.unity.burst": "1.6.6",
+    "com.unity.mathematics": "1.2.6",
+    "com.unity.test-framework": "1.1.31",
+    "com.unity.test-framework.performance": "3.0.2"
+  },
+  "keywords": [
+    "string",
+    "optimize"
+  ],
+  "author": {
+    "name": "Katuusagi a.k.a Katsuya100"
+  },
+  "documentationUrl": "https://github.com/Katsuya100/FixedString",
+  "changelogUrl": "https://github.com/Katsuya100/FixedString/releases",
+  "licensesUrl": "https://github.com/Katsuya100/FixedString/blob/v1.0.0/LICENSE"
+}
