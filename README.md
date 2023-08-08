@@ -14,7 +14,7 @@ By incorporating this library into your games, you can expect to improve the per
 
 ## Performance
 ### Measurement code on the editor
-[Test Code.](https://github.com/Katsuya100/FixedString/blob/v1.0.0/packages/Tests/Runtime/FixedString16BytesPerformanceTest.cs)  
+[Test Code.](packages/Tests/Runtime/FixedString16BytesPerformanceTest.cs)  
 
 #### Result
 
