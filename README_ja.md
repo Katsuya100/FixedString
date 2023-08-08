@@ -12,7 +12,7 @@
 
 ## 性能
 ### エディタ上の計測コード
-[テストコード](https://github.com/Katsuya100/FixedString/blob/v1.0.0/packages/Tests/Runtime/FixedString16BytesPerformanceTest.cs)  
+[テストコード](packages/Tests/Runtime/FixedString16BytesPerformanceTest.cs)  
 
 #### 結果
 
