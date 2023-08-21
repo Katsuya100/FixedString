@@ -18,38 +18,68 @@
 
 |  実行処理  |  string  |  FixedString16Bytes  |
 | ---- | ---- | ---- |
-| CompareTo(完全一致) | 9.19947 ms | 0.13448 ms |
-| CompareTo(前方不一致) | 6.774095 ms | 0.31031 ms |
-| CompareTo(後方不一致) | 16.82627 ms | 0.29572 ms |
-| Equals(完全一致) | 1.9474 ms | 0.170045 ms |
-| Equals(前方不一致) | 0.915505 ms | 0.135375 ms |
-| Equals(後方不一致) | 1.83779 ms | 0.113755 ms |
-| Equals(同一参照) | 0.1114 ms | 0.122265 ms |
-| GetHashCode | 0.441135 ms | 0.110915 ms |
+| CompareTo(完全一致) | 8.93387 ms | 0.14452 ms |
+| CompareTo(前方不一致) | 6.730895 ms | 0.18746 ms |
+| CompareTo(後方不一致) | 1.99403 ms | 0.2018 ms |
+| Equals(完全一致) | 1.9474 ms | 0.13075 ms |
+| Equals(前方不一致) | 0.922145 ms | 0.135375 ms |
+| Equals(後方不一致) | 1.932745 ms | 0.11946 ms |
+| Equals(同一参照) | 0.117455 ms | 0.12779 ms |
+| GetHashCode | 0.434235 ms | 0.1588 ms |
 
 殆どの項目で大幅な性能向上が見られています。  
 
 ### Releaseビルド後の計測コード
 ```.cs
-float time;
-var log = new StringBuilder();
-int testCount = 1000000;
-string s = "1234567890123456";
-Katuusagi.FixedString.FixedString16Bytes fs = "1234567890123456";
+private readonly ref struct Measure
 {
-    time = Time.realtimeSinceStartup;
-    for (int i = 0; i < testCount; ++i)
-    {
-        s.GetHashCode();
-    }
-    log.AppendLine($"string.GetHashCode: {Time.realtimeSinceStartup - time} ms");
+    private readonly string _label;
+    private readonly StringBuilder _builder;
+    private readonly float _time;
 
-    time = Time.realtimeSinceStartup;
-    for (int i = 0; i < testCount; ++i)
+    public Measure(string label, StringBuilder builder)
     {
-        fs.GetHashCode();
+        _label = label;
+        _builder = builder;
+        _time = (Time.realtimeSinceStartup * 1000);
     }
-    log.AppendLine($"FixedString16Bytes.GetHashCode: {Time.realtimeSinceStartup - time} ms");
+
+    public void Dispose()
+    {
+        _builder.AppendLine($"{_label}: {(Time.realtimeSinceStartup * 1000) - _time} ms");
+    }
+}
+
+private const string Str16              = "1234567890123456";
+private const string StrFirstMismatch   = "0234567890123456";
+private const string StrLastMismatch    = "1234567890123450";
+
+:
+
+var log = new StringBuilder();
+int testCount = 10000;
+
+string str16 = Str16;
+Katuusagi.FixedString.FixedString16Bytes fstr16 = Str16;
+
+{
+    string cmp = new string(Str16);
+    using (new Measure("string.CompareTo(ExactMatch)", log))
+    {
+        for (int i = 0; i < testCount; ++i)
+        {
+            str16.CompareTo(cmp);
+        }
+    }
+
+    Katuusagi.FixedString.FixedString16Bytes fcmp = Str16;
+    using (new Measure("FixedString16Bytes.CompareTo(ExactMatch)", log))
+    {
+        for (int i = 0; i < testCount; ++i)
+        {
+            fstr16.CompareTo(fcmp);
+        }
+    }
 }
  :
 ```
@@ -58,19 +88,25 @@ Katuusagi.FixedString.FixedString16Bytes fs = "1234567890123456";
 
 |  実行処理  |  string(Mono)  |  FixedString16Bytes(Mono)  |  string(IL2CPP)  |  FixedString16Bytes(IL2CPP)  |
 | ---- | ---- | ---- | ---- | ---- |
-| CompareTo(完全一致) | 0.2965469 ms | 0.001680374 ms | 0.3044763 ms | 0.0006399155 ms |
-| CompareTo(前方不一致) | 0.2367401 ms | 0.006359577 ms | 0.2113404 ms | 0.01101637 ms |
-| CompareTo(後方不一致) | 0.5797958 ms | 0.00847435 ms | 0.5714216 ms | 0.01089239 ms |
-| Equals(完全一致) | 0.05168152 ms | 0.001331806 ms | 0.02657223 ms | 0 ms(計測不能) |
-| Equals(前方不一致) | 0.01606703 ms | 0.001196384 ms | 0.009623051 ms | 0 ms(計測不能) |
-| Equals(後方不一致) | 0.05083609 ms | 0.001334667 ms | 0.02079439 ms | 0 ms(計測不能) |
-| Equals(同一参照) | 0.001683712 ms | 0.001712799 ms | 0.001599312 ms | 0 ms(計測不能) |
-| GetHashCode | 0.01259422 ms | 0.0008416176 ms | 0.01050234 ms | 0 ms(計測不能) |
+| CompareTo(完全一致) | 2.556774 ms | 0.01568604 ms | 3.039063 ms | 0.006835938 ms |
+| CompareTo(前方不一致) | 2.155987 ms | 0.03159332 ms | 2.127686 ms | 0.01342773 ms |
+| CompareTo(後方不一致) | 5.269791 ms | 0.03646469 ms | 6.133057 ms | 0.01928711 ms |
+| Equals(完全一致) | 0.4704475 ms | 0.01257324 ms | 0.2084961 ms | 0 ms(計測不能) |
+| Equals(前方不一致) | 0.1491051 ms | 0.01111221 ms | 0.09838867 ms | 0 ms(計測不能) |
+| Equals(後方不一致) | 0.4700203 ms | 0.01218033 ms | 0.2211914ms | 0 ms(計測不能) |
+| Equals(同一参照) | 0.01568604 ms | 0.01568222 ms | 0.01318359 ms | 0 ms(計測不能) |
+| GetHashCode | 0.1163826 ms | 0.02494431 ms | 0.05493164 ms | 0.0002441406 ms |
 
-項目によっては475倍程度性能向上しています。  
-EqualsやGetHashCodeに至っては、IL2CPP環境では何度計測しても0msになってしまいます。  
+項目によっては440倍程度性能向上しています。  
+Equalsに至っては、IL2CPP環境では何度計測しても0msになってしまいます。  
 
 ## インストール方法
+### 依存パッケージをインストール
+以下のパッケージをインストールする。  
+
+- [ILPostProcessorCommon v1.1.0](https://github.com/Katsuya100/ILPostProcessorCommon/tree/v1.1.0)
+- [ConstExpressionForUnity v2.1.0](https://github.com/Katsuya100/ConstExpressionForUnity/tree/v2.1.0)
+
 ### FixedStringのインストール
 1. [Window > Package Manager]を開く。
 2. [+ > Add package from git url...]をクリックする。

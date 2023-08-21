@@ -1,5 +1,7 @@
 using NUnit.Framework;
 using System;
+using System.Linq;
+using System.Text;
 
 namespace Katuusagi.FixedString.Tests
 {
@@ -27,6 +29,12 @@ namespace Katuusagi.FixedString.Tests
             Assert.IsTrue(((ReadOnlySpan<byte>)stackalloc byte[15]).IsConvertableToFixedString16Bytes());
             Assert.IsTrue(((ReadOnlySpan<byte>)stackalloc byte[16]).IsConvertableToFixedString16Bytes());
             Assert.IsFalse(((ReadOnlySpan<byte>)stackalloc byte[17]).IsConvertableToFixedString16Bytes());
+        }
+
+        [Test]
+        public void ToUTF8()
+        {
+            Assert.IsTrue("1234".ToUTF8().SequenceEqual(Encoding.UTF8.GetBytes("1234")));
         }
     }
 }

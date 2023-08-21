@@ -1,20 +1,17 @@
-//#define USE_FIXED_STRING_BURST
 //#define FIXED_STRING_ENDIAN_SAFE
+using Katuusagi.ILPostProcessorCommon;
 using System;
 using System.Collections;
 using System.Collections.Generic;
+using System.Linq;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using System.Text;
 using Unity.Collections.LowLevel.Unsafe;
-using Unity.Mathematics;
 using UnityEngine;
 
 namespace Katuusagi.FixedString
 {
-#if USE_FIXED_STRING_BURST
-    [Unity.Burst.BurstCompile]
-#endif
     [Serializable]
     [StructLayout(LayoutKind.Explicit)]
     public struct FixedString16Bytes : IComparable, IComparable<FixedString16Bytes>, IComparable<string>,
@@ -22,9 +19,8 @@ namespace Katuusagi.FixedString
                                            IEnumerable<char>
     {
         public const int Size = 16;
-
-        [FieldOffset(0)]
-        private int4 _value;
+        private static readonly int[] FirstBitTable = FixedStringUtils.DeBruijn64_FirstBitTable.ToArray();
+        private static readonly int[] ByteTable = FixedStringUtils.DeBruijn64_ByteTable.ToArray();
 
         [FieldOffset(0)]
         public long _1;
@@ -40,8 +36,37 @@ namespace Katuusagi.FixedString
         {
             get
             {
-                var buffer = MemoryMarshal.CreateReadOnlySpan(ref UnsafeUtility.As<int4, byte>(ref _value), Size);
-                int nullIdx = GetNullIndex();
+                var buffer = MemoryMarshal.CreateReadOnlySpan(ref UnsafeUtility.As<FixedMemory16Bytes, byte>(ref _memory), Size);
+                int nullIdx = 0;
+                if (_2 != 0)
+                {
+                    var x = _2;
+                    x |= (x >> 1);
+                    x |= (x >> 2);
+                    x |= (x >> 4);
+                    x |= (x >> 8);
+                    x |= (x >> 16);
+                    x |= (x >> 32);
+                    var highest = (ulong)(x - (long)((ulong)x >> 1));
+                    var tableIndex = (int)((highest * FixedStringUtils.DeBruijn64Sequence) >> 58);
+                    var offsetByte = ByteTable[tableIndex];
+                    nullIdx = 8 + offsetByte + 1;
+                }
+                else if (_1 != 0)
+                {
+                    var x = _1;
+                    x |= (x >> 1);
+                    x |= (x >> 2);
+                    x |= (x >> 4);
+                    x |= (x >> 8);
+                    x |= (x >> 16);
+                    x |= (x >> 32);
+                    var highest = (ulong)(x - (long)((ulong)x >> 1));
+                    var tableIndex = (int)((highest * FixedStringUtils.DeBruijn64Sequence) >> 58);
+                    var offsetByte = ByteTable[tableIndex];
+                    nullIdx = offsetByte + 1;
+                }
+
                 if (nullIdx < Size)
                 {
                     buffer = buffer.Slice(0, nullIdx);
@@ -54,80 +79,69 @@ namespace Katuusagi.FixedString
         public FixedString16Bytes(in FixedString16Bytes other)
         {
             _1 = _2 = 0;
-            _memory = default;
-            _value = other._value;
+            _memory = other._memory;
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public FixedString16Bytes(in string str)
         {
             _1 = _2 = 0;
-            _memory = default;
             Span<byte> buffer = stackalloc byte[Size];
-#if USE_FIXED_STRING_BURST
-            _value = StringTo<int4>(str, buffer);
-#else
             Encoding.UTF8.GetBytes(str, buffer);
-            _value = UnsafeUtility.As<byte, int4>(ref MemoryMarshal.GetReference(buffer));
-#endif
+            _memory = UnsafeUtility.As<byte, FixedMemory16Bytes>(ref MemoryMarshal.GetReference(buffer));
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public FixedString16Bytes(in ReadOnlySpan<char> str)
         {
             _1 = _2 = 0;
-            _memory = default;
             Span<byte> buffer = stackalloc byte[Size];
-#if USE_FIXED_STRING_BURST
-            _value = StringTo<int4>(str, buffer);
-#else
             Encoding.UTF8.GetBytes(str, buffer);
-            _value = UnsafeUtility.As<byte, int4>(ref MemoryMarshal.GetReference(buffer));
-#endif
+            _memory = UnsafeUtility.As<byte, FixedMemory16Bytes>(ref MemoryMarshal.GetReference(buffer));
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public FixedString16Bytes(in ReadOnlySpan<byte> buffer)
         {
             _1 = _2 = 0;
-            _memory = default;
             if (buffer.Length < Size)
             {
-                _value = default;
-                var span = MemoryMarshal.CreateSpan(ref UnsafeUtility.As<int4, byte>(ref _value), Size);
+                _memory = default;
+                var span = MemoryMarshal.CreateSpan(ref UnsafeUtility.As<FixedMemory16Bytes, byte>(ref _memory), Size);
                 buffer.CopyTo(span);
                 return;
             }
+            _memory = UnsafeUtility.As<byte, FixedMemory16Bytes>(ref MemoryMarshal.GetReference(buffer));
+        }
 
-#if USE_FIXED_STRING_BURST
-            _value = BinaryAs<int4>(buffer);
-#else
-            _value = UnsafeUtility.As<byte, int4>(ref MemoryMarshal.GetReference(buffer));
-#endif
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public FixedString16Bytes(in ReadOnlyArray<byte> buffer)
+        {
+            _1 = _2 = 0;
+            if (buffer.Count < Size)
+            {
+                _memory = default;
+                var span = MemoryMarshal.CreateSpan(ref UnsafeUtility.As<FixedMemory16Bytes, byte>(ref _memory), Size);
+                buffer.CopyTo(span);
+                return;
+            }
+            _memory = UnsafeUtility.As<byte, FixedMemory16Bytes>(ref MemoryMarshal.GetReference<byte>(buffer));
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public static implicit operator FixedString16Bytes(string str)
         {
             Span<byte> buffer = stackalloc byte[Size];
-#if USE_FIXED_STRING_BURST
-            return StringTo<FixedString16Bytes>(str, buffer);
-#else
             Encoding.UTF8.GetBytes(str, buffer);
             return UnsafeUtility.As<byte, FixedString16Bytes>(ref MemoryMarshal.GetReference(buffer));
-#endif
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public static implicit operator FixedString16Bytes(in Span<char> str)
         {
             Span<byte> buffer = stackalloc byte[Size];
-#if USE_FIXED_STRING_BURST
-            return StringTo<FixedString16Bytes>(str, buffer);
-#else
             Encoding.UTF8.GetBytes(str, buffer);
             return UnsafeUtility.As<byte, FixedString16Bytes>(ref MemoryMarshal.GetReference(buffer));
-#endif
         }
 
 
@@ -135,12 +149,8 @@ namespace Katuusagi.FixedString
         public static implicit operator FixedString16Bytes(in ReadOnlySpan<char> str)
         {
             Span<byte> buffer = stackalloc byte[Size];
-#if USE_FIXED_STRING_BURST
-            return StringTo<FixedString16Bytes>(str, buffer);
-#else
             Encoding.UTF8.GetBytes(str, buffer);
             return UnsafeUtility.As<byte, FixedString16Bytes>(ref MemoryMarshal.GetReference(buffer));
-#endif
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -154,11 +164,7 @@ namespace Katuusagi.FixedString
                 return result;
             }
 
-#if USE_FIXED_STRING_BURST
-            return BinaryAs<FixedString16Bytes>(buffer);
-#else
             return UnsafeUtility.As<byte, FixedString16Bytes>(ref MemoryMarshal.GetReference(buffer));
-#endif
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -172,20 +178,59 @@ namespace Katuusagi.FixedString
                 return result;
             }
 
-#if USE_FIXED_STRING_BURST
-            return BinaryAs<FixedString16Bytes>(buffer);
-#else
             return UnsafeUtility.As<byte, FixedString16Bytes>(ref MemoryMarshal.GetReference(buffer));
-#endif
+        }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public static explicit operator FixedString16Bytes(ReadOnlyArray<byte> buffer)
+        {
+            if (buffer.Count < Size)
+            {
+                FixedString16Bytes result = default;
+                var span = MemoryMarshal.CreateSpan(ref UnsafeUtility.As<FixedString16Bytes, byte>(ref result), Size);
+                buffer.CopyTo(span);
+                return result;
+            }
+
+            return UnsafeUtility.As<byte, FixedString16Bytes>(ref MemoryMarshal.GetReference<byte>(buffer));
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public static implicit operator string(in FixedString16Bytes fstr)
         {
-            var value = fstr._value;
-            var buffer = MemoryMarshal.CreateReadOnlySpan(ref UnsafeUtility.As<int4, byte>(ref value), Size);
-            int nullIdx = fstr.GetNullIndex();
-            if (nullIdx != -1)
+            var memory = fstr._memory;
+            var buffer = MemoryMarshal.CreateReadOnlySpan(ref UnsafeUtility.As<FixedMemory16Bytes, byte>(ref memory), Size);
+            int nullIdx = 0;
+            if (fstr._2 != 0)
+            {
+                var x = fstr._2;
+                x |= (x >> 1);
+                x |= (x >> 2);
+                x |= (x >> 4);
+                x |= (x >> 8);
+                x |= (x >> 16);
+                x |= (x >> 32);
+                var highest = (ulong)(x - (long)((ulong)x >> 1));
+                var tableIndex = (int)((highest * FixedStringUtils.DeBruijn64Sequence) >> 58);
+                var offsetByte = ByteTable[tableIndex];
+                nullIdx = 8 + offsetByte + 1;
+            }
+            else if (fstr._1 != 0)
+            {
+                var x = fstr._1;
+                x |= (x >> 1);
+                x |= (x >> 2);
+                x |= (x >> 4);
+                x |= (x >> 8);
+                x |= (x >> 16);
+                x |= (x >> 32);
+                var highest = (ulong)(x - (long)((ulong)x >> 1));
+                var tableIndex = (int)((highest * FixedStringUtils.DeBruijn64Sequence) >> 58);
+                var offsetByte = ByteTable[tableIndex];
+                nullIdx = offsetByte + 1;
+            }
+
+            if (nullIdx < Size)
             {
                 buffer = buffer.Slice(0, nullIdx);
             }
@@ -195,9 +240,38 @@ namespace Katuusagi.FixedString
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public override string ToString()
         {
-            var buffer = MemoryMarshal.CreateReadOnlySpan(ref UnsafeUtility.As<int4, byte>(ref _value), Size);
-            int nullIdx = GetNullIndex();
-            if (nullIdx != -1)
+            var buffer = MemoryMarshal.CreateReadOnlySpan(ref UnsafeUtility.As<FixedMemory16Bytes, byte>(ref _memory), Size);
+            int nullIdx = 0;
+            if (_2 != 0)
+            {
+                var x = _2;
+                x |= (x >> 1);
+                x |= (x >> 2);
+                x |= (x >> 4);
+                x |= (x >> 8);
+                x |= (x >> 16);
+                x |= (x >> 32);
+                var highest = (ulong)(x - (long)((ulong)x >> 1));
+                var tableIndex = (int)((highest * FixedStringUtils.DeBruijn64Sequence) >> 58);
+                var offsetByte = ByteTable[tableIndex];
+                nullIdx = 8 + offsetByte + 1;
+            }
+            else if (_1 != 0)
+            {
+                var x = _1;
+                x |= (x >> 1);
+                x |= (x >> 2);
+                x |= (x >> 4);
+                x |= (x >> 8);
+                x |= (x >> 16);
+                x |= (x >> 32);
+                var highest = (ulong)(x - (long)((ulong)x >> 1));
+                var tableIndex = (int)((highest * FixedStringUtils.DeBruijn64Sequence) >> 58);
+                var offsetByte = ByteTable[tableIndex];
+                nullIdx = offsetByte + 1;
+            }
+
+            if (nullIdx < Size)
             {
                 buffer = buffer.Slice(0, nullIdx);
             }
@@ -207,9 +281,38 @@ namespace Katuusagi.FixedString
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public void CopyTo(Span<char> result)
         {
-            var buffer = MemoryMarshal.CreateReadOnlySpan(ref UnsafeUtility.As<int4, byte>(ref _value), Size);
-            int nullIdx = GetNullIndex();
-            if (nullIdx != -1)
+            var buffer = MemoryMarshal.CreateReadOnlySpan(ref UnsafeUtility.As<FixedMemory16Bytes, byte>(ref _memory), Size);
+            int nullIdx = 0;
+            if (_2 != 0)
+            {
+                var x = _2;
+                x |= (x >> 1);
+                x |= (x >> 2);
+                x |= (x >> 4);
+                x |= (x >> 8);
+                x |= (x >> 16);
+                x |= (x >> 32);
+                var highest = (ulong)(x - (long)((ulong)x >> 1));
+                var tableIndex = (int)((highest * FixedStringUtils.DeBruijn64Sequence) >> 58);
+                var offsetByte = ByteTable[tableIndex];
+                nullIdx = 8 + offsetByte + 1;
+            }
+            else if (_1 != 0)
+            {
+                var x = _1;
+                x |= (x >> 1);
+                x |= (x >> 2);
+                x |= (x >> 4);
+                x |= (x >> 8);
+                x |= (x >> 16);
+                x |= (x >> 32);
+                var highest = (ulong)(x - (long)((ulong)x >> 1));
+                var tableIndex = (int)((highest * FixedStringUtils.DeBruijn64Sequence) >> 58);
+                var offsetByte = ByteTable[tableIndex];
+                nullIdx = offsetByte + 1;
+            }
+
+            if (nullIdx < Size)
             {
                 buffer = buffer.Slice(0, nullIdx);
             }
@@ -219,7 +322,7 @@ namespace Katuusagi.FixedString
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public void CopyTo(Span<byte> result)
         {
-            MemoryMarshal.Write(result, ref _value);
+            MemoryMarshal.Write(result, ref _memory);
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -242,8 +345,8 @@ namespace Katuusagi.FixedString
             {
                 var diffBit = _1 ^ other._1;
                 var lowest = (ulong)(diffBit & -diffBit);
-                var tableIndex = (int)((lowest * FixedStringUtils.DeBruijn64) >> 58);
-                var offset = FixedStringUtils.DeBruijn64_FirstBitTable[tableIndex];
+                var tableIndex = (int)((lowest * FixedStringUtils.DeBruijn64Sequence) >> 58);
+                var offset = FirstBitTable[tableIndex];
                 var lv = (byte)(_1 >> offset);
                 var rv = (byte)(other._1 >> offset);
                 return lv - rv;
@@ -253,8 +356,8 @@ namespace Katuusagi.FixedString
             {
                 var diffBit = _2 ^ other._2;
                 var lowest = (ulong)(diffBit & -diffBit);
-                var tableIndex = (int)((lowest * FixedStringUtils.DeBruijn64) >> 58);
-                var offset = FixedStringUtils.DeBruijn64_FirstBitTable[tableIndex];
+                var tableIndex = (int)((lowest * FixedStringUtils.DeBruijn64Sequence) >> 58);
+                var offset = FirstBitTable[tableIndex];
                 var lv = (byte)(_2 >> offset);
                 var rv = (byte)(other._2 >> offset);
                 return lv - rv;
@@ -273,18 +376,14 @@ namespace Katuusagi.FixedString
             }
 
             Span<byte> buffer = stackalloc byte[Size];
-#if USE_FIXED_STRING_BURST
-            ref var other = ref StringTo<FixedString16Bytes>(str, buffer);
-#else
             Encoding.UTF8.GetBytes(str, buffer);
             ref var other = ref UnsafeUtility.As<byte, FixedString16Bytes>(ref MemoryMarshal.GetReference(buffer));
-#endif
             if (_1 != other._1)
             {
                 var diffBit = _1 ^ other._1;
                 var lowest = (ulong)(diffBit & -diffBit);
-                var tableIndex = (int)((lowest * FixedStringUtils.DeBruijn64) >> 58);
-                var offset = FixedStringUtils.DeBruijn64_FirstBitTable[tableIndex];
+                var tableIndex = (int)((lowest * FixedStringUtils.DeBruijn64Sequence) >> 58);
+                var offset = FirstBitTable[tableIndex];
                 var lv = (byte)(_1 >> offset);
                 var rv = (byte)(other._1 >> offset);
                 return lv - rv;
@@ -294,8 +393,8 @@ namespace Katuusagi.FixedString
             {
                 var diffBit = _2 ^ other._2;
                 var lowest = (ulong)(diffBit & -diffBit);
-                var tableIndex = (int)((lowest * FixedStringUtils.DeBruijn64) >> 58);
-                var offset = FixedStringUtils.DeBruijn64_FirstBitTable[tableIndex];
+                var tableIndex = (int)((lowest * FixedStringUtils.DeBruijn64Sequence) >> 58);
+                var offset = FirstBitTable[tableIndex];
                 var lv = (byte)(_2 >> offset);
                 var rv = (byte)(other._2 >> offset);
                 return lv - rv;
@@ -314,8 +413,8 @@ namespace Katuusagi.FixedString
                     {
                         var diffBit = _1 ^ other._1;
                         var lowest = (ulong)(diffBit & -diffBit);
-                        var tableIndex = (int)((lowest * FixedStringUtils.DeBruijn64) >> 58);
-                        var offset = FixedStringUtils.DeBruijn64_FirstBitTable[tableIndex];
+                        var tableIndex = (int)((lowest * FixedStringUtils.DeBruijn64Sequence) >> 58);
+                        var offset = FirstBitTable[tableIndex];
                         var lv = (byte)(_1 >> offset);
                         var rv = (byte)(other._1 >> offset);
                         return lv - rv;
@@ -325,8 +424,8 @@ namespace Katuusagi.FixedString
                     {
                         var diffBit = _2 ^ other._2;
                         var lowest = (ulong)(diffBit & -diffBit);
-                        var tableIndex = (int)((lowest * FixedStringUtils.DeBruijn64) >> 58);
-                        var offset = FixedStringUtils.DeBruijn64_FirstBitTable[tableIndex];
+                        var tableIndex = (int)((lowest * FixedStringUtils.DeBruijn64Sequence) >> 58);
+                        var offset = FirstBitTable[tableIndex];
                         var lv = (byte)(_2 >> offset);
                         var rv = (byte)(other._2 >> offset);
                         return lv - rv;
@@ -346,18 +445,14 @@ namespace Katuusagi.FixedString
                     }
 
                     Span<byte> buffer = stackalloc byte[Size];
-#if USE_FIXED_STRING_BURST
-                    ref var other = ref StringTo<FixedString16Bytes>(str, buffer);
-#else
                     Encoding.UTF8.GetBytes(str, buffer);
                     ref var other = ref UnsafeUtility.As<byte, FixedString16Bytes>(ref MemoryMarshal.GetReference(buffer));
-#endif
                     if (_1 != other._1)
                     {
                         var diffBit = _1 ^ other._1;
                         var lowest = (ulong)(diffBit & -diffBit);
-                        var tableIndex = (int)((lowest * FixedStringUtils.DeBruijn64) >> 58);
-                        var offset = FixedStringUtils.DeBruijn64_FirstBitTable[tableIndex];
+                        var tableIndex = (int)((lowest * FixedStringUtils.DeBruijn64Sequence) >> 58);
+                        var offset = FirstBitTable[tableIndex];
                         var lv = (byte)(_1 >> offset);
                         var rv = (byte)(other._1 >> offset);
                         return lv - rv;
@@ -367,8 +462,8 @@ namespace Katuusagi.FixedString
                     {
                         var diffBit = _2 ^ other._2;
                         var lowest = (ulong)(diffBit & -diffBit);
-                        var tableIndex = (int)((lowest * FixedStringUtils.DeBruijn64) >> 58);
-                        var offset = FixedStringUtils.DeBruijn64_FirstBitTable[tableIndex];
+                        var tableIndex = (int)((lowest * FixedStringUtils.DeBruijn64Sequence) >> 58);
+                        var offset = FirstBitTable[tableIndex];
                         var lv = (byte)(_2 >> offset);
                         var rv = (byte)(other._2 >> offset);
                         return lv - rv;
@@ -383,11 +478,7 @@ namespace Katuusagi.FixedString
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public bool Equals(FixedString16Bytes other)
         {
-#if USE_FIXED_STRING_BURST
-            return EqualCheck(this, other);
-#else
             return _1 == other._1 && _2 == other._2;
-#endif
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -400,17 +491,9 @@ namespace Katuusagi.FixedString
             }
 
             Span<byte> buffer = stackalloc byte[Size];
-#if USE_FIXED_STRING_BURST
-            ref var other = ref StringTo<FixedString16Bytes>(str, buffer);
-#else
             Encoding.UTF8.GetBytes(str, buffer);
             ref var other = ref UnsafeUtility.As<byte, FixedString16Bytes>(ref MemoryMarshal.GetReference(buffer));
-#endif
-#if USE_FIXED_STRING_BURST
-            return EqualCheck(this, other);
-#else
             return _1 == other._1 && _2 == other._2;
-#endif
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -419,11 +502,7 @@ namespace Katuusagi.FixedString
             {
                 if (obj is FixedString16Bytes other)
                 {
-#if USE_FIXED_STRING_BURST
-                    return EqualCheck(this, other);
-#else
                     return _1 == other._1 && _2 == other._2;
-#endif
                 }
             }
             {
@@ -436,17 +515,9 @@ namespace Katuusagi.FixedString
                     }
 
                     Span<byte> buffer = stackalloc byte[Size];
-#if USE_FIXED_STRING_BURST
-                    ref var other = ref StringTo<FixedString16Bytes>(str, buffer);
-#else
                     Encoding.UTF8.GetBytes(str, buffer);
                     ref var other = ref UnsafeUtility.As<byte, FixedString16Bytes>(ref MemoryMarshal.GetReference(buffer));
-#endif
-#if USE_FIXED_STRING_BURST
-                    return EqualCheck(this, other);
-#else
                     return _1 == other._1 && _2 == other._2;
-#endif
                 }
             }
 
@@ -456,11 +527,7 @@ namespace Katuusagi.FixedString
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public static bool operator ==(in FixedString16Bytes left, in FixedString16Bytes right)
         {
-#if USE_FIXED_STRING_BURST
-            return EqualCheck(left, right);
-#else
             return left._1 == right._1 && left._2 == right._2;
-#endif
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -473,17 +540,9 @@ namespace Katuusagi.FixedString
             }
 
             Span<byte> buffer = stackalloc byte[Size];
-#if USE_FIXED_STRING_BURST
-            ref var other = ref StringTo<FixedString16Bytes>(right, buffer);
-#else
             Encoding.UTF8.GetBytes(right, buffer);
             ref var other = ref UnsafeUtility.As<byte, FixedString16Bytes>(ref MemoryMarshal.GetReference(buffer));
-#endif
-#if USE_FIXED_STRING_BURST
-            return EqualCheck(left, other);
-#else
             return left._1 == other._1 && left._2 == other._2;
-#endif
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -496,27 +555,15 @@ namespace Katuusagi.FixedString
             }
 
             Span<byte> buffer = stackalloc byte[Size];
-#if USE_FIXED_STRING_BURST
-            ref var other = ref StringTo<FixedString16Bytes>(left, buffer);
-#else
             Encoding.UTF8.GetBytes(left, buffer);
             ref var other = ref UnsafeUtility.As<byte, FixedString16Bytes>(ref MemoryMarshal.GetReference(buffer));
-#endif
-#if USE_FIXED_STRING_BURST
-            return EqualCheck(right, other);
-#else
             return right._1 == other._1 && right._2 == other._2;
-#endif
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public static bool operator !=(in FixedString16Bytes left, in FixedString16Bytes right)
         {
-#if USE_FIXED_STRING_BURST
-            return !EqualCheck(left, right);
-#else
             return left._1 != right._1 || left._2 != right._2;
-#endif
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -529,17 +576,9 @@ namespace Katuusagi.FixedString
             }
 
             Span<byte> buffer = stackalloc byte[Size];
-#if USE_FIXED_STRING_BURST
-            ref var other = ref StringTo<FixedString16Bytes>(right, buffer);
-#else
             Encoding.UTF8.GetBytes(right, buffer);
             ref var other = ref UnsafeUtility.As<byte, FixedString16Bytes>(ref MemoryMarshal.GetReference(buffer));
-#endif
-#if USE_FIXED_STRING_BURST
-            return !EqualCheck(left, other);
-#else
             return left._1 != other._1 || left._2 != other._2;
-#endif
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -552,38 +591,45 @@ namespace Katuusagi.FixedString
             }
 
             Span<byte> buffer = stackalloc byte[Size];
-#if USE_FIXED_STRING_BURST
-            ref var other = ref StringTo<FixedString16Bytes>(left, buffer);
-#else
             Encoding.UTF8.GetBytes(left, buffer);
             ref var other = ref UnsafeUtility.As<byte, FixedString16Bytes>(ref MemoryMarshal.GetReference(buffer));
-#endif
-#if USE_FIXED_STRING_BURST
-            return !EqualCheck(right, other);
-#else
             return right._1 != other._1 || right._2 != other._2;
-#endif
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public override int GetHashCode()
         {
-#if FIXED_STRING_ENDIAN_SAFE
-            if (!FixedStringUtils.IsLittleEndian)
-            {
-                var x = (int)((_value.x & 0xff000000) >> 24) | ((_value.x & 0x00ff0000) >> 8) | ((_value.x & 0x0000ff00) << 8) | ((_value.x & 0x000000ff) << 24);
-                var y = (int)((_value.y & 0xff000000) >> 24) | ((_value.y & 0x00ff0000) >> 8) | ((_value.y & 0x0000ff00) << 8) | ((_value.y & 0x000000ff) << 24);
-                var z = (int)((_value.z & 0xff000000) >> 24) | ((_value.z & 0x00ff0000) >> 8) | ((_value.z & 0x0000ff00) << 8) | ((_value.z & 0x000000ff) << 24);
-                var w = (int)((_value.w & 0xff000000) >> 24) | ((_value.w & 0x00ff0000) >> 8) | ((_value.w & 0x0000ff00) << 8) | ((_value.w & 0x000000ff) << 24);
-                unchecked
-                {
-                    return ((((17 * 23 + x) * 23 + y) * 23 + z) * 23 + w);
-                }
-            }
-#endif
             unchecked
             {
-                return ((((17 * 23 + _value.x) * 23 + _value.y) * 23 + _value.z) * 23 + _value.w);
+                ulong k1 = (ulong)_1;
+                ulong k2 = (ulong)_2;
+
+#if FIXED_STRING_ENDIAN_SAFE
+                if (!FixedStringUtils.IsLittleEndian)
+                {
+                    k1 = ((k1 & 0xff00000000000000L) >> 56) |
+                         ((k1 & 0x00ff000000000000L) >> 40) |
+                         ((k1 & 0x0000ff0000000000L) >> 24) |
+                         ((k1 & 0x000000ff00000000L) >> 8) |
+                         ((k1 & 0x00000000ff000000L) << 8) |
+                         ((k1 & 0x0000000000ff0000L) << 24) |
+                         ((k1 & 0x000000000000ff00L) << 40) |
+                         ((k1 & 0x00000000000000ffL) << 56);
+                    k2 = ((k2 & 0xff00000000000000L) >> 56) |
+                         ((k2 & 0x00ff000000000000L) >> 40) |
+                         ((k2 & 0x0000ff0000000000L) >> 24) |
+                         ((k2 & 0x000000ff00000000L) >> 8) |
+                         ((k2 & 0x00000000ff000000L) << 8) |
+                         ((k2 & 0x0000000000ff0000L) << 24) |
+                         ((k2 & 0x000000000000ff00L) << 40) |
+                         ((k2 & 0x00000000000000ffL) << 56);
+                }
+#endif
+                var h1 = ((k1 * 0x9E3779B97F4A7C15) >> 31) | ((k1 * 0x9E3779B97F4A7C15) << (64 - 31)) * 0xBF58476D1CE4E5B9;
+                h1 = ((h1 >> 27) | (h1 << (64 - 27))) * 0x94D049BB133111EB;
+                var h2 = ((k2 * 0x9E3779B97F4A7C15) >> 33) | ((k2 * 0x9E3779B97F4A7C15) << (64 - 33)) * 0xBF58476D1CE4E5B9;
+                h2 = (h2 >> 29) | (h2 << (64 - 29)) * 0x94D049BB133111EB;
+                return (int)(((h1 ^ h2) >> 32) ^ (h1 ^ h2));
             }
         }
 
@@ -597,70 +643,6 @@ namespace Katuusagi.FixedString
         IEnumerator IEnumerable.GetEnumerator()
         {
             return GetEnumerator();
-        }
-
-#if USE_FIXED_STRING_BURST
-        [Unity.Burst.BurstCompile]
-#endif
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private static bool EqualCheck(in FixedString16Bytes left, in FixedString16Bytes right)
-        {
-            return left._1 == right._1 && left._2 == right._2;
-        }
-
-#if USE_FIXED_STRING_BURST
-        [Unity.Burst.BurstCompile]
-#endif
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private static ref T BinaryAs<T>(in ReadOnlySpan<byte> buffer)
-        {
-            return ref UnsafeUtility.As<byte, T>(ref MemoryMarshal.GetReference(buffer));
-        }
-
-#if USE_FIXED_STRING_BURST
-        [Unity.Burst.BurstCompile]
-#endif
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private static ref T StringTo<T>(in ReadOnlySpan<char> str, in Span<byte> buffer)
-        {
-            Encoding.UTF8.GetBytes(str, buffer);
-            return ref UnsafeUtility.As<byte, T>(ref MemoryMarshal.GetReference(buffer));
-        }
-
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private int GetNullIndex()
-        {
-            if (_2 != 0)
-            {
-                var x = _2;
-                x |= (x >> 1);
-                x |= (x >> 2);
-                x |= (x >> 4);
-                x |= (x >> 8);
-                x |= (x >> 16);
-                x |= (x >> 32);
-                var highest = (ulong)(x - (long)((ulong)x >> 1));
-                var tableIndex = (int)((highest * FixedStringUtils.DeBruijn64) >> 58);
-                var offsetByte = FixedStringUtils.DeBruijn64_ByteTable[tableIndex];
-                return 8 + offsetByte + 1;
-            }
-            
-            if (_1 != 0)
-            {
-                var x = _1;
-                x |= (x >> 1);
-                x |= (x >> 2);
-                x |= (x >> 4);
-                x |= (x >> 8);
-                x |= (x >> 16);
-                x |= (x >> 32);
-                var highest = (ulong)(x - (long)((ulong)x >> 1));
-                var tableIndex = (int)((highest * FixedStringUtils.DeBruijn64) >> 58);
-                var offsetByte = FixedStringUtils.DeBruijn64_ByteTable[tableIndex];
-                return offsetByte + 1;
-            }
-
-            return 0;
         }
     }
 }

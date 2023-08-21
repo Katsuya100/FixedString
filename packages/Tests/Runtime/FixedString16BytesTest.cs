@@ -6,12 +6,39 @@ namespace Katuusagi.FixedString.Tests
 {
     public class FixedString16BytesTest
     {
-        private const string Str16      = "1234567890123456";
-        private const string Str15      = "123456789012345";
-        private const string Str10      = "1234567890";
-        private const string StrGreater = "1234567790123456";
-        private const string StrLess    = "1234567990123456";
-        private const string StrAIUEO   = "‚ ‚¢‚¤‚¦‚¨";
+        private const string CStr16      = "1234567890123456";
+        private const string CStr15      = "123456789012345";
+        private const string CStr10      = "1234567890";
+        private const string CStrGreater = "1234567790123456";
+        private const string CStrLess    = "1234567990123456";
+        private const string CStrAIUEO   = "‚ ‚¢‚¤‚¦‚¨";
+        private string Str16      = CStr16;
+        private string Str15      = CStr15;
+        private string Str10      = CStr10;
+        private string StrGreater = CStrGreater;
+        private string StrLess    = CStrLess;
+        private string StrAIUEO   = CStrAIUEO;
+
+        [Test]
+        public void OptimizedCast()
+        {
+            Assert.AreEqual(((FixedString16Bytes)CStr16).ToString(), CStr16);
+            Assert.AreEqual(((FixedString16Bytes)CStr10).ToString(), CStr10);
+        }
+
+        [Test]
+        public void OptimizedEqualOperator()
+        {
+            Assert.IsTrue(((FixedString16Bytes)Str16) == CStr16);
+            Assert.IsFalse(((FixedString16Bytes)Str16) == CStr15);
+        }
+
+        [Test]
+        public void OptimizedInequalOperator()
+        {
+            Assert.IsTrue(((FixedString16Bytes)Str16) != CStr15);
+            Assert.IsFalse(((FixedString16Bytes)Str16) != CStr16);
+        }
 
         [Test]
         public void Cast()
@@ -39,6 +66,9 @@ namespace Katuusagi.FixedString.Tests
             Encoding.UTF8.GetBytes(Str15, bytes15);
             Assert.AreEqual(((FixedString16Bytes)bytes15).ToString(), Str15);
             Assert.AreEqual(((FixedString16Bytes)(ReadOnlySpan<byte>)bytes15).ToString(), Str15);
+
+            Assert.AreEqual(((FixedString16Bytes)Str16.ToUTF8()).ToString(), Str16);
+            Assert.AreEqual(((FixedString16Bytes)Str10.ToUTF8()).ToString(), Str10);
         }
 
         [Test]
@@ -53,17 +83,22 @@ namespace Katuusagi.FixedString.Tests
         {
             Assert.IsTrue(((FixedString16Bytes)Str16) == ((FixedString16Bytes)Str16));
             Assert.IsTrue(((FixedString16Bytes)Str16) == Str16);
+            Assert.IsTrue(Str16 == ((FixedString16Bytes)Str16));
             Assert.IsFalse(((FixedString16Bytes)Str16) == ((FixedString16Bytes)Str15));
             Assert.IsFalse(((FixedString16Bytes)Str16) == Str15);
+            Assert.IsFalse(Str15 == ((FixedString16Bytes)Str16));
         }
 
         [Test]
-        public void NotEqualOperator()
+        public void InequalOperator()
         {
             Assert.IsFalse(((FixedString16Bytes)Str16) != ((FixedString16Bytes)Str16));
             Assert.IsFalse(((FixedString16Bytes)Str16) != Str16);
+            Assert.IsFalse(Str16 != ((FixedString16Bytes)Str16));
+
             Assert.IsTrue(((FixedString16Bytes)Str16) != ((FixedString16Bytes)Str15));
             Assert.IsTrue(((FixedString16Bytes)Str16) != Str15);
+            Assert.IsTrue(Str15 != ((FixedString16Bytes)Str16));
         }
 
         [Test]
@@ -141,6 +176,9 @@ namespace Katuusagi.FixedString.Tests
             Span<byte> bytes2 = stackalloc byte[16];
             Encoding.UTF8.GetBytes(Str16, bytes2);
             Assert.IsTrue(new FixedString16Bytes(bytes2) == Str16);
+
+            Assert.IsTrue(new FixedString16Bytes(Str16.ToUTF8()) == Str16);
+            Assert.IsTrue(new FixedString16Bytes(Str15.ToUTF8()) == Str15);
         }
 
         [Test]
