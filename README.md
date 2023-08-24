@@ -143,14 +143,6 @@ FIXED_STRING_ENDIAN_SAFE
 By defining a symbol, endian conversion is performed in a big-endian environment.  
 However, the processing speed of GetHashCode is slightly reduced.  
 
-### Burst compilation support
-By defining the following symbols, the FixedString implementation replaces the code for Burst compilation.  
-```
-USE_FIXED_STRING_BURST
-```
-However, at the time of FixedString implementation, it has been confirmed that the operation of FixedString will become heavier if it is converted to SIMD.  
-Please use it when it is improved in the future.  
-
 ## Reasons for high performance
 The string is a collection of char types, and the comparison process is looped according to the number of characters.  
 Although compiler optimization has improved the runtime speed considerably, the cost is not insignificant when complex processing such as GetHashCode is intervened.  
