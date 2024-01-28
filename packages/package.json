@@ -2,11 +2,11 @@
   "name": "com.katuusagi.fixedstring",
   "displayName": "FixedString",
   "description": "",
-  "version": "2.0.0",
+  "version": "2.1.0",
   "unity": "2021.3",
   "dependencies": {
-    "com.katuusagi.ilpostprocessorcommon": "1.1.0",
-    "com.katuusagi.constexpressionforunity": "2.1.0",
+    "com.katuusagi.ilpostprocessorcommon": "2.1.0",
+    "com.katuusagi.constexpressionforunity": "3.1.0",
     "com.unity.burst": "1.6.6",
     "com.unity.test-framework": "1.1.31",
     "com.unity.test-framework.performance": "3.0.2"
@@ -20,5 +20,5 @@
   },
   "documentationUrl": "https://github.com/Katsuya100/FixedString",
   "changelogUrl": "https://github.com/Katsuya100/FixedString/releases",
-  "licensesUrl": "https://github.com/Katsuya100/FixedString/blob/v2.0.0/LICENSE"
+  "licensesUrl": "https://github.com/Katsuya100/FixedString/blob/v2.1.0/LICENSE"
 }

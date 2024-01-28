@@ -32,11 +32,11 @@ namespace Katuusagi.FixedString.Editor
                 return null;
             }
 
-            ILPostProcessorUtils.Logger = new Logger();
 
             try
             {
-                using (var assembly = ILPostProcessorUtils.LoadAssemblyDefinition(compiledAssembly))
+                ILPPUtils.InitLog<FixedStringILPostProcessor>(compiledAssembly);
+                using (var assembly = ILPPUtils.LoadAssemblyDefinition(compiledAssembly))
                 {
                     EqualityMethodRef = assembly.MainModule.ImportReference(EqualityMethod);
                     InequalityMethodRef = assembly.MainModule.ImportReference(InequalityMethod);
@@ -65,9 +65,10 @@ namespace Katuusagi.FixedString.Editor
                                 for (var i = 0; i < instructions.Count; ++i)
                                 {
                                     var instruction = instructions[i];
-                                    isChanged = OpImplicitProcess(ilProcessor, method, ref instruction, out var diff) || isChanged;
-                                    isChanged = OpEqualityProcess(ilProcessor, method, ref instruction, out diff) || isChanged;
-                                    isChanged = OpInequalityProcess(ilProcessor, method, ref instruction, out diff) || isChanged;
+                                    int diff = 0;
+                                    isChanged = OpImplicitProcess(ilProcessor, method, instruction, ref diff) || isChanged;
+                                    OpEqualityProcess(method, instruction);
+                                    OpInequalityProcess(method, instruction);
                                     i += diff;
                                 }
 
@@ -76,7 +77,7 @@ namespace Katuusagi.FixedString.Editor
                                     continue;
                                 }
 
-                                ILPostProcessorUtils.ResolveInstructionOpCode(instructions);
+                                ILPPUtils.ResolveInstructionOpCode(instructions);
                             }
                         }
                     }
@@ -91,21 +92,19 @@ namespace Katuusagi.FixedString.Editor
                     };
 
                     assembly.Write(pe, writeParameter);
-                    return new ILPostProcessResult(new InMemoryAssembly(pe.ToArray(), pdb.ToArray()), ILPostProcessorUtils.Logger.Messages);
+                    return new ILPostProcessResult(new InMemoryAssembly(pe.ToArray(), pdb.ToArray()), ILPPUtils.Logger.Messages);
                 }
             }
             catch (Exception e)
             {
-                ILPostProcessorUtils.LogException(e);
+                ILPPUtils.LogException(e);
             }
 
-            return new ILPostProcessResult(null, ILPostProcessorUtils.Logger.Messages);
+            return new ILPostProcessResult(null, ILPPUtils.Logger.Messages);
         }
 
-        private bool OpImplicitProcess(ILProcessor ilProcessor, MethodDefinition method, ref Instruction instruction, out int instructionDiff)
+        private bool OpImplicitProcess(ILProcessor ilProcessor, MethodDefinition method, Instruction instruction, ref int instructionDiff)
         {
-            instructionDiff = 0;
-
             if (instruction.OpCode != OpCodes.Call ||
                 instruction.Operand.ToString() != "Katuusagi.FixedString.FixedString16Bytes Katuusagi.FixedString.FixedString16Bytes::op_Implicit(System.String)")
             {
@@ -113,121 +112,208 @@ namespace Katuusagi.FixedString.Editor
             }
 
             var argInstruction = instruction.Previous;
-            if (!ILPostProcessorUtils.TryEmulateLiteral<string>(ref argInstruction, out var str))
+            if (!ILPPUtils.TryGetConstValue<string>(ref argInstruction, out var str))
             {
                 return false;
             }
 
             if (Encoding.UTF8.GetByteCount(str) > FixedString16Bytes.Size)
             {
-                ILPostProcessorUtils.LogError("Only strings of 16 bytes or less can be assigned to \"FixedString16Byte\".", method, instruction);
+                ILPPUtils.LogError("FIXEDSTRING0001", "FixedString failed.", "Only strings of 16 bytes or less can be assigned to \"FixedString16Byte\".", method, instruction);
                 return false;
             }
 
             var loadValue = _constTable.LoadValue(new FixedString16Bytes(str));
-            ++instructionDiff;
-            ilProcessor.InsertAfter(instruction, loadValue);
+            instruction.OpCode = loadValue.OpCode;
+            instruction.Operand = loadValue.Operand;
 
-            while (argInstruction != instruction)
-            {
-                --instructionDiff;
-                ILPostProcessorUtils.ReplaceTarget(ilProcessor, argInstruction, loadValue);
-                argInstruction = argInstruction.Next;
-                ilProcessor.Remove(argInstruction.Previous);
-            }
-
+            // à¯êîÇçÌèú
             --instructionDiff;
-            ILPostProcessorUtils.ReplaceTarget(ilProcessor, instruction, loadValue);
-            ilProcessor.Remove(instruction);
-
-            instruction = loadValue;
+            ILPPUtils.ReplaceTarget(ilProcessor, argInstruction, loadValue);
+            argInstruction = argInstruction.Next;
+            ilProcessor.Remove(argInstruction.Previous);
             return true;
         }
 
-        private bool OpEqualityProcess(ILProcessor ilProcessor, MethodDefinition method, ref Instruction instruction, out int instructionDiff)
+        private bool OpEqualityProcess(MethodDefinition method, Instruction instruction)
         {
-            instructionDiff = 0;
-
-            if (instruction.OpCode != OpCodes.Call ||
-                instruction.Operand.ToString() != "System.Boolean Katuusagi.FixedString.FixedString16Bytes::op_Equality(Katuusagi.FixedString.FixedString16Bytes&,System.String)")
+            if (instruction.OpCode != OpCodes.Call)
             {
                 return false;
             }
 
-            var argInstruction = instruction.Previous;
-            if (!ILPostProcessorUtils.TryEmulateLiteral<string>(ref argInstruction, out var str))
+            Instruction argInstruction = null;
+            var operandString = instruction.Operand.ToString();
+            if (operandString == "System.Boolean Katuusagi.FixedString.FixedString16Bytes::op_Equality(System.String,Katuusagi.FixedString.FixedString16Bytes&)")
+            {
+                TryGetPushArgumentInstruction(instruction, 0, out argInstruction);
+            }
+            else if (operandString == "System.Boolean Katuusagi.FixedString.FixedString16Bytes::op_Equality(Katuusagi.FixedString.FixedString16Bytes&,System.String)")
+            {
+                TryGetPushArgumentInstruction(instruction, 1, out argInstruction);
+            }
+
+            if (argInstruction == null)
+            {
+                return false;
+            }
+
+            if (!ILPPUtils.TryGetConstValue<string>(ref argInstruction, out var str))
             {
                 return false;
             }
 
             if (Encoding.UTF8.GetByteCount(str) > FixedString16Bytes.Size)
             {
-                ILPostProcessorUtils.LogError("Only strings of 16 bytes or less can be assigned to \"FixedString16Byte\".", method, instruction);
+                ILPPUtils.LogError("FIXEDSTRING0001", "FixedString failed.", "Only strings of 16 bytes or less can be assigned to \"FixedString16Byte\".", method, instruction);
                 return false;
             }
 
             var field = _constTable.GetStructField(new FixedString16Bytes(str));
-            var loadValue = Instruction.Create(OpCodes.Ldsflda, field);
+            argInstruction.OpCode = OpCodes.Ldsflda;
+            argInstruction.Operand = field;
 
-            ++instructionDiff;
-            ilProcessor.InsertAfter(argInstruction, loadValue);
-
-            ++instructionDiff;
-            ilProcessor.InsertAfter(instruction, Instruction.Create(OpCodes.Call, EqualityMethodRef));
-
-            --instructionDiff;
-            ILPostProcessorUtils.ReplaceTarget(ilProcessor, argInstruction, loadValue);
-            ilProcessor.Remove(argInstruction);
-
-            --instructionDiff;
-            ILPostProcessorUtils.ReplaceTarget(ilProcessor, instruction, loadValue);
-            ilProcessor.Remove(instruction);
-
-            instruction = loadValue;
+            instruction.OpCode = OpCodes.Call;
+            instruction.Operand = EqualityMethodRef;
             return true;
         }
 
-        private bool OpInequalityProcess(ILProcessor ilProcessor, MethodDefinition method, ref Instruction instruction, out int instructionDiff)
+        private bool OpInequalityProcess(MethodDefinition method, Instruction instruction)
         {
-            instructionDiff = 0;
-
-            if (instruction.OpCode != OpCodes.Call ||
-                instruction.Operand.ToString() != "System.Boolean Katuusagi.FixedString.FixedString16Bytes::op_Inequality(Katuusagi.FixedString.FixedString16Bytes&,System.String)")
+            if (instruction.OpCode != OpCodes.Call)
             {
                 return false;
             }
 
-            var argInstruction = instruction.Previous;
-            if (!ILPostProcessorUtils.TryEmulateLiteral<string>(ref argInstruction, out var str))
+            Instruction argInstruction = null;
+            var operandString = instruction.Operand.ToString();
+            if (operandString == "System.Boolean Katuusagi.FixedString.FixedString16Bytes::op_Inequality(System.String,Katuusagi.FixedString.FixedString16Bytes&)")
+            {
+                TryGetPushArgumentInstruction(instruction, 0, out argInstruction);
+            }
+            else if (operandString == "System.Boolean Katuusagi.FixedString.FixedString16Bytes::op_Inequality(Katuusagi.FixedString.FixedString16Bytes&,System.String)")
+            {
+                TryGetPushArgumentInstruction(instruction, 1, out argInstruction);
+            }
+
+            if (argInstruction == null)
+            {
+                return false;
+            }
+
+            if (!ILPPUtils.TryGetConstValue<string>(ref argInstruction, out var str))
             {
                 return false;
             }
 
             if (Encoding.UTF8.GetByteCount(str) > FixedString16Bytes.Size)
             {
-                ILPostProcessorUtils.LogError("Only strings of 16 bytes or less can be assigned to \"FixedString16Byte\".", method, instruction);
+                ILPPUtils.LogError("FIXEDSTRING0001", "FixedString failed.", "Only strings of 16 bytes or less can be assigned to \"FixedString16Byte\".", method, instruction);
                 return false;
             }
 
             var field = _constTable.GetStructField(new FixedString16Bytes(str));
-            var loadValue = Instruction.Create(OpCodes.Ldsflda, field);
+            argInstruction.OpCode = OpCodes.Ldsflda;
+            argInstruction.Operand = field;
 
-            ++instructionDiff;
-            ilProcessor.InsertAfter(argInstruction, loadValue);
-
-            ++instructionDiff;
-            ilProcessor.InsertAfter(instruction, Instruction.Create(OpCodes.Call, InequalityMethodRef));
-
-            --instructionDiff;
-            ILPostProcessorUtils.ReplaceTarget(ilProcessor, argInstruction, loadValue);
-            ilProcessor.Remove(argInstruction);
-
-            --instructionDiff;
-            ILPostProcessorUtils.ReplaceTarget(ilProcessor, instruction, loadValue);
-            ilProcessor.Remove(instruction);
-
-            instruction = loadValue;
+            instruction.OpCode = OpCodes.Call;
+            instruction.Operand = InequalityMethodRef;
             return true;
+        }
+
+        private bool TryGetPushArgumentInstruction(Instruction call, int argNumber, out Instruction arg)
+        {
+            arg = null;
+            if (call.OpCode != OpCodes.Call &&
+                call.OpCode != OpCodes.Callvirt &&
+                call.OpCode != OpCodes.Calli)
+            {
+                return false;
+            }
+
+            if (!(call.Operand is MethodReference method))
+            {
+                return false;
+            }
+
+            var parameterCount = method.Parameters.Count;
+            var targetStackCount = parameterCount - argNumber;
+            var stackCount = 0;
+            var instruction = call.Previous;
+            while (instruction != null)
+            {
+                var pushCount = GetPushCount(instruction.OpCode);
+                stackCount += pushCount;
+                if (stackCount >= targetStackCount)
+                {
+                    arg = instruction;
+                    return true;
+                }
+
+                var popCount = GetPopCount(instruction.OpCode);
+                if (popCount == -1)
+                {
+                    return false;
+                }
+                stackCount -= popCount;
+                instruction = instruction.Previous;
+            }
+
+            return false;
+        }
+
+        private int GetPushCount(OpCode opCode)
+        {
+            switch (opCode.StackBehaviourPush)
+            {
+                case StackBehaviour.Push0:
+                    return 0;
+                case StackBehaviour.Push1:
+                case StackBehaviour.Pushi:
+                case StackBehaviour.Pushi8:
+                case StackBehaviour.Pushr4:
+                case StackBehaviour.Pushr8:
+                case StackBehaviour.Pushref:
+                case StackBehaviour.Varpush:
+                    return 1;
+                case StackBehaviour.Push1_push1:
+                    return 2;
+            }
+            return 0;
+        }
+
+        private int GetPopCount(OpCode opCode)
+        {
+            switch (opCode.StackBehaviourPop)
+            {
+                case StackBehaviour.Pop0:
+                    return 0;
+                case StackBehaviour.Pop1:
+                case StackBehaviour.Popi:
+                case StackBehaviour.Popref:
+                case StackBehaviour.Popref_pop1:
+                case StackBehaviour.Varpop:
+                    return 1;
+                case StackBehaviour.Pop1_pop1:
+                case StackBehaviour.Popi_pop1:
+                case StackBehaviour.Popi_popi:
+                case StackBehaviour.Popi_popi8:
+                case StackBehaviour.Popi_popr4:
+                case StackBehaviour.Popi_popr8:
+                case StackBehaviour.Popref_popi:
+                    return 2;
+                case StackBehaviour.Popi_popi_popi:
+                case StackBehaviour.Popref_popi_popi:
+                case StackBehaviour.Popref_popi_popi8:
+                case StackBehaviour.Popref_popi_popr4:
+                case StackBehaviour.Popref_popi_popr8:
+                case StackBehaviour.Popref_popi_popref:
+                    return 3;
+                case StackBehaviour.PopAll:
+                    return -1;
+            }
+
+            return 0;
         }
     }
 }

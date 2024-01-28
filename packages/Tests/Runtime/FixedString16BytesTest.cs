@@ -31,6 +31,8 @@ namespace Katuusagi.FixedString.Tests
         {
             Assert.IsTrue(((FixedString16Bytes)Str16) == CStr16);
             Assert.IsFalse(((FixedString16Bytes)Str16) == CStr15);
+            Assert.IsTrue(CStr16 == ((FixedString16Bytes)Str16));
+            Assert.IsFalse(CStr15 == ((FixedString16Bytes)Str16));
         }
 
         [Test]
@@ -38,6 +40,8 @@ namespace Katuusagi.FixedString.Tests
         {
             Assert.IsTrue(((FixedString16Bytes)Str16) != CStr15);
             Assert.IsFalse(((FixedString16Bytes)Str16) != CStr16);
+            Assert.IsTrue(CStr15 != ((FixedString16Bytes)Str16));
+            Assert.IsFalse(CStr16 != ((FixedString16Bytes)Str16));
         }
 
         [Test]
