@@ -105,7 +105,7 @@ Equalsに至っては、IL2CPP環境では何度計測しても0msになって�
 以下のパッケージをインストールする。  
 
 - [ILPostProcessorCommon v1.2.0](https://github.com/Katsuya100/ILPostProcessorCommon/tree/v1.2.0)
-- [ConstExpressionForUnity v2.1.1](https://github.com/Katsuya100/ConstExpressionForUnity/tree/v2.1.1)
+- [ConstExpressionForUnity v3.1.1](https://github.com/Katsuya100/ConstExpressionForUnity/tree/v3.1.1)
 
 ### FixedStringのインストール
 1. [Window > Package Manager]を開く。
