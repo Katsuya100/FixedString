@@ -22,7 +22,7 @@ namespace Katuusagi.FixedString.Editor
 
         public override bool WillProcess(ICompiledAssembly compiledAssembly)
         {
-            return true;
+            return compiledAssembly.References.Any(v => v.EndsWith("Katuusagi.FixedString.dll"));
         }
 
         public override ILPostProcessResult Process(ICompiledAssembly compiledAssembly)
@@ -67,8 +67,8 @@ namespace Katuusagi.FixedString.Editor
                                     var instruction = instructions[i];
                                     int diff = 0;
                                     isChanged = OpImplicitProcess(ilProcessor, method, instruction, ref diff) || isChanged;
-                                    OpEqualityProcess(method, instruction);
-                                    OpInequalityProcess(method, instruction);
+                                    isChanged = OpEqualityProcess(method, instruction) || isChanged;
+                                    isChanged = OpInequalityProcess(method, instruction) || isChanged;
                                     i += diff;
                                 }
 
@@ -146,11 +146,11 @@ namespace Katuusagi.FixedString.Editor
             var operandString = instruction.Operand.ToString();
             if (operandString == "System.Boolean Katuusagi.FixedString.FixedString16Bytes::op_Equality(System.String,Katuusagi.FixedString.FixedString16Bytes&)")
             {
-                TryGetPushArgumentInstruction(instruction, 0, out argInstruction);
+                instruction.TryGetPushArgumentInstruction(0, out argInstruction);
             }
             else if (operandString == "System.Boolean Katuusagi.FixedString.FixedString16Bytes::op_Equality(Katuusagi.FixedString.FixedString16Bytes&,System.String)")
             {
-                TryGetPushArgumentInstruction(instruction, 1, out argInstruction);
+                instruction.TryGetPushArgumentInstruction(1, out argInstruction);
             }
 
             if (argInstruction == null)
@@ -189,11 +189,11 @@ namespace Katuusagi.FixedString.Editor
             var operandString = instruction.Operand.ToString();
             if (operandString == "System.Boolean Katuusagi.FixedString.FixedString16Bytes::op_Inequality(System.String,Katuusagi.FixedString.FixedString16Bytes&)")
             {
-                TryGetPushArgumentInstruction(instruction, 0, out argInstruction);
+                instruction.TryGetPushArgumentInstruction(0, out argInstruction);
             }
             else if (operandString == "System.Boolean Katuusagi.FixedString.FixedString16Bytes::op_Inequality(Katuusagi.FixedString.FixedString16Bytes&,System.String)")
             {
-                TryGetPushArgumentInstruction(instruction, 1, out argInstruction);
+                instruction.TryGetPushArgumentInstruction(1, out argInstruction);
             }
 
             if (argInstruction == null)
@@ -219,101 +219,6 @@ namespace Katuusagi.FixedString.Editor
             instruction.OpCode = OpCodes.Call;
             instruction.Operand = InequalityMethodRef;
             return true;
-        }
-
-        private bool TryGetPushArgumentInstruction(Instruction call, int argNumber, out Instruction arg)
-        {
-            arg = null;
-            if (call.OpCode != OpCodes.Call &&
-                call.OpCode != OpCodes.Callvirt &&
-                call.OpCode != OpCodes.Calli)
-            {
-                return false;
-            }
-
-            if (!(call.Operand is MethodReference method))
-            {
-                return false;
-            }
-
-            var parameterCount = method.Parameters.Count;
-            var targetStackCount = parameterCount - argNumber;
-            var stackCount = 0;
-            var instruction = call.Previous;
-            while (instruction != null)
-            {
-                var pushCount = GetPushCount(instruction.OpCode);
-                stackCount += pushCount;
-                if (stackCount >= targetStackCount)
-                {
-                    arg = instruction;
-                    return true;
-                }
-
-                var popCount = GetPopCount(instruction.OpCode);
-                if (popCount == -1)
-                {
-                    return false;
-                }
-                stackCount -= popCount;
-                instruction = instruction.Previous;
-            }
-
-            return false;
-        }
-
-        private int GetPushCount(OpCode opCode)
-        {
-            switch (opCode.StackBehaviourPush)
-            {
-                case StackBehaviour.Push0:
-                    return 0;
-                case StackBehaviour.Push1:
-                case StackBehaviour.Pushi:
-                case StackBehaviour.Pushi8:
-                case StackBehaviour.Pushr4:
-                case StackBehaviour.Pushr8:
-                case StackBehaviour.Pushref:
-                case StackBehaviour.Varpush:
-                    return 1;
-                case StackBehaviour.Push1_push1:
-                    return 2;
-            }
-            return 0;
-        }
-
-        private int GetPopCount(OpCode opCode)
-        {
-            switch (opCode.StackBehaviourPop)
-            {
-                case StackBehaviour.Pop0:
-                    return 0;
-                case StackBehaviour.Pop1:
-                case StackBehaviour.Popi:
-                case StackBehaviour.Popref:
-                case StackBehaviour.Popref_pop1:
-                case StackBehaviour.Varpop:
-                    return 1;
-                case StackBehaviour.Pop1_pop1:
-                case StackBehaviour.Popi_pop1:
-                case StackBehaviour.Popi_popi:
-                case StackBehaviour.Popi_popi8:
-                case StackBehaviour.Popi_popr4:
-                case StackBehaviour.Popi_popr8:
-                case StackBehaviour.Popref_popi:
-                    return 2;
-                case StackBehaviour.Popi_popi_popi:
-                case StackBehaviour.Popref_popi_popi:
-                case StackBehaviour.Popref_popi_popi8:
-                case StackBehaviour.Popref_popi_popr4:
-                case StackBehaviour.Popref_popi_popr8:
-                case StackBehaviour.Popref_popi_popref:
-                    return 3;
-                case StackBehaviour.PopAll:
-                    return -1;
-            }
-
-            return 0;
         }
     }
 }
