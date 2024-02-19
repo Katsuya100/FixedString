@@ -105,8 +105,8 @@ When it comes to Equals, it is 0 ms no matter how many times it is measured in t
 ### Install dependenies
 Install the following packages.  
 
-- [ILPostProcessorCommon v1.1.0](https://github.com/Katsuya100/ILPostProcessorCommon/tree/v1.1.0)
-- [ConstExpressionForUnity v2.1.0](https://github.com/Katsuya100/ConstExpressionForUnity/tree/v2.1.0)
+- [ILPostProcessorCommon v1.2.0](https://github.com/Katsuya100/ILPostProcessorCommon/tree/v1.2.0)
+- [ConstExpressionForUnity v2.1.1](https://github.com/Katsuya100/ConstExpressionForUnity/tree/v2.1.1)
 
 ### Installing FixedString
 1. Open [Window > Package Manager].
